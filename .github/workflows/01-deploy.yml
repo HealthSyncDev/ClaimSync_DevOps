@@ -1,3 +1,4 @@
+```yaml
 name: ClaimSync Deployment
 
 on:
@@ -41,10 +42,15 @@ jobs:
       - name: Update Frontend Repository
         shell: powershell
         run: |
+
+          Write-Host "========== Updating Frontend Repository =========="
+
           Set-Location "D:\DevOps\Repositories\ClaimSync_Frontend"
 
           git checkout dev
           git pull origin dev
+
+          Write-Host "Frontend repository updated successfully."
 
       #########################################################
       # Update Backend
@@ -53,10 +59,29 @@ jobs:
       - name: Update Backend Repository
         shell: powershell
         run: |
+
+          Write-Host "========== Updating Backend Repository =========="
+
           Set-Location "D:\DevOps\Repositories\ClaimSync_Backend"
 
           git checkout dev
+
+          # Tell Git to ignore local changes inside the
+          # generated frontend static folder.
+          #
+          # This does NOT ignore other backend files.
+
+          git ls-files -z "src/main/resources/static/" |
+            ForEach-Object {
+              if ($_ -ne "") {
+                git update-index --skip-worktree -- $_
+              }
+            }
+
           git pull origin dev
+
+          Write-Host ""
+          Write-Host "Backend repository updated successfully."
 
       #########################################################
       # Environment Check
@@ -105,20 +130,38 @@ jobs:
         shell: powershell
         run: |
 
-          $frontendDist="D:\DevOps\Repositories\ClaimSync_Frontend\dist"
+          Write-Host "========== Bundling Frontend into Backend =========="
 
-          $backendStatic="D:\DevOps\Repositories\ClaimSync_Backend\src\main\resources\static"
+          $frontendDist = "D:\DevOps\Repositories\ClaimSync_Frontend\dist"
 
-          if(Test-Path $backendStatic)
+          $backendStatic = "D:\DevOps\Repositories\ClaimSync_Backend\src\main\resources\static"
+
+          if (!(Test-Path $frontendDist))
           {
-              Remove-Item "$backendStatic\*" -Recurse -Force
+              throw "Frontend dist folder not found."
           }
 
-          Copy-Item "$frontendDist\*" $backendStatic -Recurse -Force
-
-          if(!(Test-Path "$backendStatic\index.html"))
+          if (!(Test-Path $backendStatic))
           {
-              throw "Bundle failed."
+              New-Item `
+                -ItemType Directory `
+                -Path $backendStatic `
+                -Force | Out-Null
+          }
+
+          # Remove previous generated frontend files.
+          Remove-Item "$backendStatic\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+          # Copy new frontend build.
+          Copy-Item `
+            "$frontendDist\*" `
+            $backendStatic `
+            -Recurse `
+            -Force
+
+          if (!(Test-Path "$backendStatic\index.html"))
+          {
+              throw "Frontend bundle failed. index.html not found."
           }
 
           Write-Host "Frontend bundled successfully."
@@ -141,12 +184,13 @@ jobs:
                  Where-Object { $_.Name -notmatch "original" } |
                  Select-Object -First 1
 
-          if($null -eq $jar)
+          if ($null -eq $jar)
           {
               throw "Backend JAR not generated."
           }
 
-          Write-Host "Generated:"
+          Write-Host ""
+          Write-Host "Generated JAR:"
           Write-Host $jar.FullName
 
       #########################################################
@@ -157,31 +201,41 @@ jobs:
         shell: powershell
         run: |
 
-          $jar = Get-ChildItem "D:\DevOps\Repositories\ClaimSync_Backend\target\*.jar" |
-                 Where-Object { $_.Name -notmatch "original" } |
-                 Select-Object -First 1
+          Write-Host "========== Publishing Build Artifact =========="
 
-          if($null -eq $jar)
+          $jar = Get-ChildItem `
+              "D:\DevOps\Repositories\ClaimSync_Backend\target\*.jar" |
+              Where-Object { $_.Name -notmatch "original" } |
+              Select-Object -First 1
+
+          if ($null -eq $jar)
           {
               throw "Artifact not found."
           }
 
-          $output="D:\DevOps\Output"
+          $output = "D:\DevOps\Output"
 
-          if(!(Test-Path $output))
+          if (!(Test-Path $output))
           {
-              New-Item -ItemType Directory -Path $output | Out-Null
+              New-Item `
+                -ItemType Directory `
+                -Path $output `
+                -Force | Out-Null
           }
 
-          Copy-Item $jar.FullName "$output\ClaimSync.jar" -Force
+          Copy-Item `
+            $jar.FullName `
+            "$output\ClaimSync.jar" `
+            -Force
 
-          if(!(Test-Path "$output\ClaimSync.jar"))
+          if (!(Test-Path "$output\ClaimSync.jar"))
           {
               throw "Publishing failed."
           }
 
           Write-Host ""
-          Write-Host "Artifact published."
+          Write-Host "Artifact published successfully."
+          Write-Host "$output\ClaimSync.jar"
 
       #########################################################
       # Backup Build Artifact
@@ -193,16 +247,16 @@ jobs:
 
           Write-Host "========== Backup =========="
 
-          $artifact="D:\DevOps\Output\ClaimSync.jar"
+          $artifact = "D:\DevOps\Output\ClaimSync.jar"
 
-          if(!(Test-Path $artifact))
+          if (!(Test-Path $artifact))
           {
               throw "ClaimSync.jar not found."
           }
 
-          $timestamp=Get-Date -Format "yyyyMMdd_HHmmss"
+          $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 
-          $backupFolder="D:\DevOps\Backups\$timestamp"
+          $backupFolder = "D:\DevOps\Backups\$timestamp"
 
           New-Item `
             -ItemType Directory `
@@ -214,16 +268,15 @@ jobs:
             "$backupFolder\ClaimSync.jar" `
             -Force
 
-          if(!(Test-Path "$backupFolder\ClaimSync.jar"))
+          if (!(Test-Path "$backupFolder\ClaimSync.jar"))
           {
               throw "Backup failed."
           }
 
           Write-Host ""
           Write-Host "Backup created."
-
           Write-Host "$backupFolder\ClaimSync.jar"
-      
+
       #########################################################
       # Verify Deploy Folder
       #########################################################
@@ -247,7 +300,6 @@ jobs:
           if (!(Test-Path $deployJar))
           {
               Write-Warning "No deployed JAR found."
-
               Write-Host "This is acceptable for the first deployment."
 
               exit 0
@@ -256,10 +308,10 @@ jobs:
           Write-Host ""
           Write-Host "Current deployment found."
 
-          Get-Item $deployJar | Format-List Name,Length,LastWriteTime
-      
+          Get-Item $deployJar |
+            Format-List Name,Length,LastWriteTime
 
-            #########################################################
+      #########################################################
       # Gracefully Shutdown Running Application
       #########################################################
 
@@ -363,7 +415,8 @@ jobs:
           Write-Host ""
           Write-Host "Deployment completed successfully."
 
-          Get-Item $deployJar | Format-List Name,Length,LastWriteTime
+          Get-Item $deployJar |
+            Format-List Name,Length,LastWriteTime
 
       #########################################################
       # Start Application
@@ -390,7 +443,7 @@ jobs:
 
           Write-Host ""
           Write-Host "Application started."
-      
+
       #########################################################
       # Verify Application Health
       #########################################################
@@ -432,7 +485,6 @@ jobs:
 
           throw "Application failed health check."
 
-      
       #########################################################
       # Automatic Rollback
       #########################################################
@@ -450,8 +502,9 @@ jobs:
           $deployJar = "$deployFolder\ClaimSync.jar"
 
           #
-          # Stop failed application (if running)
+          # Stop failed application if running
           #
+
           $process = Get-CimInstance Win32_Process |
               Where-Object {
                   $_.Name -eq "java.exe" -and
@@ -462,7 +515,9 @@ jobs:
           {
               Write-Host "Stopping failed application..."
 
-              Stop-Process -Id $process.ProcessId -Force
+              $process | ForEach-Object {
+                  Stop-Process -Id $_.ProcessId -Force
+              }
 
               Start-Sleep -Seconds 5
           }
@@ -470,6 +525,12 @@ jobs:
           #
           # Find latest backup
           #
+
+          if (!(Test-Path $backupRoot))
+          {
+              throw "Backup root does not exist."
+          }
+
           $latestBackup = Get-ChildItem $backupRoot -Directory |
               Sort-Object LastWriteTime -Descending |
               Select-Object -First 1
@@ -479,7 +540,9 @@ jobs:
               throw "No backup folder found."
           }
 
-          $backupJar = Join-Path $latestBackup.FullName "ClaimSync.jar"
+          $backupJar = Join-Path `
+              $latestBackup.FullName `
+              "ClaimSync.jar"
 
           if (!(Test-Path $backupJar))
           {
@@ -492,6 +555,7 @@ jobs:
           #
           # Restore backup
           #
+
           Copy-Item `
               $backupJar `
               $deployJar `
@@ -502,6 +566,7 @@ jobs:
           #
           # Start previous version
           #
+
           Start-Process `
               -FilePath "java" `
               -ArgumentList "-jar `"$deployJar`"" `
@@ -513,8 +578,10 @@ jobs:
           #
           # Verify rollback
           #
+
           $timeout = 60
           $elapsed = 0
+          $rollbackHealthy = $false
 
           while ($elapsed -lt $timeout)
           {
@@ -526,15 +593,25 @@ jobs:
 
                   if ($response.status -eq "UP")
                   {
-                      throw "Deployment failed. Rollback completed successfully."
+                      $rollbackHealthy = $true
+                      break
                   }
               }
               catch
               {
+                  Write-Host "Waiting for rollback application startup..."
               }
 
               Start-Sleep -Seconds 5
               $elapsed += 5
           }
 
+          if ($rollbackHealthy)
+          {
+              Write-Host ""
+              Write-Host "Rollback completed successfully."
+              exit 1
+          }
+
           throw "Rollback failed. Manual intervention required."
+```
