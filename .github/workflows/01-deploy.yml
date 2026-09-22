@@ -50,6 +50,7 @@ jobs:
           git checkout dev
           git pull origin dev
 
+          Write-Host ""
           Write-Host "Frontend repository updated successfully."
 
       #########################################################
@@ -66,17 +67,23 @@ jobs:
 
           git checkout dev
 
-          # Tell Git to ignore local changes inside the
-          # generated frontend static folder.
-          #
-          # This does NOT ignore other backend files.
+          Write-Host ""
+          Write-Host "Resetting generated frontend files..."
 
-          git ls-files -z "src/main/resources/static/" |
-            ForEach-Object {
-              if ($_ -ne "") {
-                git update-index --skip-worktree -- $_
-              }
-            }
+          # IMPORTANT:
+          # The static folder contains the generated frontend.
+          # It is rebuilt from ClaimSync_Frontend\dist during every deployment.
+          #
+          # Only this folder is reset.
+          # No other backend files are modified.
+
+          git restore --source=HEAD --staged --worktree -- "src/main/resources/static/"
+
+          Write-Host ""
+          Write-Host "Generated frontend files reset."
+
+          Write-Host ""
+          Write-Host "Pulling latest backend code..."
 
           git pull origin dev
 
@@ -120,6 +127,7 @@ jobs:
               throw "Frontend build failed."
           }
 
+          Write-Host ""
           Write-Host "Frontend build completed successfully."
 
       #########################################################
@@ -149,10 +157,18 @@ jobs:
                 -Force | Out-Null
           }
 
-          # Remove previous generated frontend files.
-          Remove-Item "$backendStatic\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host ""
+          Write-Host "Removing previous frontend build..."
 
-          # Copy new frontend build.
+          Remove-Item `
+            "$backendStatic\*" `
+            -Recurse `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+          Write-Host ""
+          Write-Host "Copying new frontend build..."
+
           Copy-Item `
             "$frontendDist\*" `
             $backendStatic `
@@ -164,6 +180,7 @@ jobs:
               throw "Frontend bundle failed. index.html not found."
           }
 
+          Write-Host ""
           Write-Host "Frontend bundled successfully."
 
       #########################################################
@@ -610,6 +627,7 @@ jobs:
           {
               Write-Host ""
               Write-Host "Rollback completed successfully."
+
               exit 1
           }
 
